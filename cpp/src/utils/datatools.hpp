@@ -9,9 +9,15 @@
 // #include "zip.h"
 // #include <curl/curl.h>
 #include <opencv2/opencv.hpp>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
+#include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/visualization/cloud_viewer.h>
 
 using namespace std;
 using namespace cv;
+using namespace pcl;
 
 struct StereoData
 {
@@ -44,4 +50,5 @@ struct StereoData
 // std::vector<std::string> split(const std::string &str, char delimiter);
 
 map<string, vector<StereoData>> load_dataset(vector<string> select_dataset);
-void plot_imgs(vector<Mat> imgs, string title, Size figsize = Size(480, 270));
+void visualize_imgs(vector<Mat> imgs, string title, Size figsize = Size(1280, 720));
+void visualize_pcds(vector<PointCloud<PointXYZRGB>::Ptr> pcds, string title);

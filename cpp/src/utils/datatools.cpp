@@ -73,7 +73,7 @@ map<string, vector<StereoData>> load_dataset(vector<string> select_dataset)
 }
 
 
-void plot_imgs(vector<Mat> imgs, string title, Size figsize)
+void visualize_imgs(vector<Mat> imgs, string title, Size figsize)
 {
     for (size_t i = 0; i < imgs.size(); ++i)
     {
@@ -90,4 +90,21 @@ void plot_imgs(vector<Mat> imgs, string title, Size figsize)
 
     waitKey(0);
     destroyAllWindows();
+}
+
+void visualize_pcds(vector<PointCloud<PointXYZRGB>::Ptr> pcds, string title)
+{
+    for (size_t i = 0; i < pcds.size(); ++i)
+    {
+        // Visualize the point cloud
+        auto win_title = title + to_string(i);
+        visualization::PCLVisualizer viewer(win_title);
+        viewer.setBackgroundColor(0.0, 0.0, 0.0);
+        viewer.addPointCloud<PointXYZRGB>(pcds[i], "Colored Point Cloud");
+        viewer.setPointCloudRenderingProperties(visualization::PCL_VISUALIZER_POINT_SIZE, 1, "Colored Point Cloud");
+        viewer.spin();
+
+        io::savePCDFileBinary(win_title + ".pcd", *pcds[i]);
+    }
+
 }

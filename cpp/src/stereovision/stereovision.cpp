@@ -16,44 +16,44 @@ tuple<Mat, Mat> get_disparity(Mat left_img, Mat right_img, float f, float baseli
     cvtColor(left_img_d, left_gray, COLOR_RGB2GRAY);
     cvtColor(right_img_d, right_gray, COLOR_RGB2GRAY);
 
-    // plot_imgs({left_gray, right_gray}, "disparity");
+    // visualize_imgs({left_gray, right_gray}, "disparity");
 
     // Compute disparity map
     Ptr<StereoSGBM> stereo = StereoSGBM::create(
-        vmin / RESIZE_FACTOR,                 // minDisparity
-        (vmax - vmin) / RESIZE_FACTOR,                // numDisparities
-        BLOCK_SIZE,                   // blockSize
-        1 * BLOCK_SIZE * BLOCK_SIZE,       // P1
-        2 * BLOCK_SIZE * BLOCK_SIZE,      // P2
-        1,                    // disp12MaxDiff
-        10,                 // preFilterCap
-        10,                   // uniquenessRatio
-        100,                  // speckleWindowSize
-        2,                   // speckleRange
-        StereoSGBM::MODE_HH); // mode
+        vmin / RESIZE_FACTOR,          // minDisparity
+        (vmax - vmin) / RESIZE_FACTOR, // numDisparities
+        BLOCK_SIZE,                    // blockSize
+        1 * BLOCK_SIZE * BLOCK_SIZE,   // P1
+        2 * BLOCK_SIZE * BLOCK_SIZE,   // P2
+        1,                             // disp12MaxDiff
+        10,                            // preFilterCap
+        10,                            // uniquenessRatio
+        100,                           // speckleWindowSize
+        2,                             // speckleRange
+        StereoSGBM::MODE_HH);          // mode
 
     Mat disp, disp_conv;
     stereo->compute(left_gray, right_gray, disp);
 
     // Converting disparity values to CV_32F from CV_16S
     // auto tmp = disp.type() == CV_16S;
-    disp.convertTo(disp_conv, CV_32F, 1.0);
-    // disp_conv = (disp_conv/16.0f - (float)vmin)/((float)MAX_NDISP);
- 
+    disp.convertTo(disp_conv, CV_32F, 1.0 / 16.0);
+    disp_conv = (disp_conv/16.0f - (float)vmin)/((float)(vmax - vmin));
+
     Mat disp_norm;
     normalize(disp_conv, disp_norm, 0, 255, NORM_MINMAX, CV_8U);
 
     // Convert disparity to depth
-    Mat depth = f * baseline / (disp + max(1e-6f, doffs));
+    Mat depth = f * baseline / (disp_conv + max(1e-6f, doffs));
 
-    // plot_imgs({disp, disp_conv, disp_norm, depth}, "disparity");
+    // visualize_imgs({disp, disp_conv, disp_norm, depth}, "disparity");
 
     // Resize disparity and depth maps to original size
     Mat disp_u, depth_u;
     resize(disp_norm, disp_u, left_img.size(), 0, 0, INTER_CUBIC);
     resize(depth, depth_u, left_img.size(), 0, 0, INTER_CUBIC);
 
-    // plot_imgs({disp_u, depth_u}, "chess");
+    // visualize_imgs({disp_u, depth_u}, "chess");
 
     return make_tuple(disp_u, depth_u);
 }
@@ -66,7 +66,7 @@ void get_disparity_t(promise<tuple<Mat, Mat>> &&promise, Mat left_img, Mat right
 
 vector<tuple<Mat, Mat>> get_disparity_wrapper(vector<StereoData> stereo_data)
 {
-    vector<tuple<cv::Mat, cv::Mat>> result_list;
+    vector<tuple<Mat, Mat>> result_list;
     vector<thread> disparit_threads;
 
     vector<promise<tuple<Mat, Mat>>> promises = vector<promise<tuple<Mat, Mat>>>(stereo_data.size());
@@ -92,82 +92,82 @@ vector<tuple<Mat, Mat>> get_disparity_wrapper(vector<StereoData> stereo_data)
     return result_list;
 }
 
-#include <opencv2/opencv.hpp>
-#include <opencv2/core/core.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/calib3d/calib3d.hpp>
-#include <iostream>
-#include <vector>
-#include <numeric>
-
-using namespace std;
-using namespace cv;
-
-Mat get_pointcloud(Mat left_img, Mat disp, Mat depth, float f, float vmin, float vmax)
+vector<PointCloud<PointXYZRGB>::Ptr> get_pointcloud(vector<StereoData> stereo_data, vector<tuple<Mat, Mat>> disps)
 {
-    // Convert depth to point cloud
-    int h = left_img.rows;
-    int w = left_img.cols;
+    vector<PointCloud<PointXYZRGB>::Ptr> pointclouds;
+    for (int id = 0; id < stereo_data.size(); id++)
+    {
+        auto f = stereo_data[id].f;
+        auto vmin = stereo_data[id].vmin;
+        auto vmax = stereo_data[id].vmax;
+        
+        Mat img = stereo_data[id].img_0;
+        Mat disp = get<0>(disps[id]);
 
-    Mat Q = (Mat_<float>(4,4) << 1, 0, 0, -0.5*w,
-                                 0,-1, 0,  0.5*h, // turn points 180 deg around x-axis,
-                                 0, 0, 0,     -f, // so that y-axis looks up
-                                 0, 0, 1,      0);
+        // Convert depth to point cloud
+        int h = img.rows;
+        int w = img.cols;
 
-    Mat points_3d;
-    reprojectImageTo3D(disp, points_3d, Q);
+        Mat Q = (Mat_<float>(4, 4) << 1, 0, 0, -0.5 * w,
+                 0, -1, 0, 0.5 * h, // turn points 180 deg around x-axis,
+                 0, 0, 0, -f,       // so that y-axis looks up
+                 0, 0, 1, 0);
 
-    vector<Mat> points_3d_channels(3);
-    split(points_3d, points_3d_channels);
+        Mat points_3d;
+        reprojectImageTo3D(disp, points_3d, Q);
+        points_3d = points_3d.reshape(3, h * w);
 
-    Mat points_3d_transposed;
-    hconcat(points_3d_channels[0], points_3d_channels[1], points_3d_transposed);
-    hconcat(points_3d_transposed, points_3d_channels[2], points_3d_transposed);
+        Mat colors;
+        cvtColor(img, colors, COLOR_BGR2RGB);
+        colors = img.reshape(3, h * w);
 
-    Mat colors;
-    cvtColor(left_img, colors, COLOR_BGR2RGB);
+        // Create the vertices of coloured point cloud
+        colors.convertTo(colors, CV_32F, 1.0 / 255.0);
+        Mat verts;
+        hconcat(points_3d, colors, verts);
 
-    vector<Mat> colors_channels(3);
-    split(colors, colors_channels);
+        // save point cloud
+        // ofstream out_file("res_cv.ply");
+        // out_file << "ply\nformat ascii 1.0\n"
+        //          << "element vertex " << h * w << "\n"
+        //          << "property float x\n"
+        //          << "property float y\n"
+        //          << "property float z\n"
+        //          << "property uchar red\n"
+        //          << "property uchar green\n"
+        //          << "property uchar blue\n"
+        //          << "end_header\n";
 
-    Mat colors_transposed;
-    hconcat(colors_channels[0], colors_channels[1], colors_transposed);
-    hconcat(colors_transposed, colors_channels[2], colors_transposed);
+        // for (int i = 0; i < verts.rows; i++)
+        // {
+        //     auto point = verts.at<Vec3f>(i, 0);
+        //     auto color = verts.at<Vec3f>(i, 1);
+        //     out_file << format("%f %f %f %d %d %d\n", point[0], point[1], point[2], (int)(color[0] * 255), (int)(color[1] * 255), (int)(color[2] * 255));
+        // }
 
-    // filter noise
-    // Mat points_mask = (disp > vmin) & (disp < vmax);
-    // points_3d = points_3d.reshape(3, 1);
-    // colors = colors.reshape(3, 1);
-    // points_3d = points_3d.reshape(1, points_3d.total()).t();
-    // colors = colors.reshape(1, colors.total()).t();
-    // points_3d = points_3d.reshape(points_3d.total() / 3, 3);
-    // colors = colors.reshape(colors.total() / 3, 3);
-    // points_3d = points_3d.compress(points_mask, 0);
-    // colors = colors.compress(points_mask, 0);
+        // Create the point cloud with PCL
+        PointCloud<PointXYZRGB>::Ptr point_cloud_ptr(new PointCloud<PointXYZRGB>);
 
-    // save point cloud
-    // Mat verts = Mat::zeros(points_3d.rows, points_3d.cols + colors.cols, CV_32FC1);
-    // hconcat(points_3d, colors, verts);
-    // ofstream outfile("res_cv.ply");
-    // outfile << "ply\nformat ascii 1.0\nelement vertex " << verts.rows << "\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n";
-    // for (int i = 0; i < verts.rows; i++)
-    //     outfile << verts.at<float>(i, 0) << " " << verts.at<float>(i, 1) << " " << verts.at<float>(i, 2) << " " << static_cast<int>(verts.at<float>(i, 3)) << " " << static_cast<int>(verts.at<float>(i, 
+        for (int i = 0; i < verts.rows; i++)
+        {
+            auto point = verts.at<Vec3f>(i, 0);
+            auto color = verts.at<Vec3f>(i, 1);
 
-    // save point cloud
-    Mat verts;
-    hconcat(points_3d, colors, verts);
-    ofstream out_file("res_cv.ply");
-    out_file << "ply\nformat ascii 1.0\n"
-             << "element vertex " << verts.rows << "\n"
-             << "property float x\n"
-             << "property float y\n"
-             << "property float z\n"
-             << "property uchar red\n"
-             << "property uchar green\n"
-             << "property uchar blue\n"
-             << "end_header\n";
-    out_file << format(verts, Formatter::FMT_PYTHON) << endl;
+            if (point[0] > vmax || point[0] < vmin || point[1] > vmax || point[1] < vmin)
+                continue;
 
-    return Q;
+            PointXYZRGB rgb_point;
+            rgb_point.x = point[0];
+            rgb_point.y = point[1];
+            rgb_point.z = point[2];
+            rgb_point.r = color[0] * 255;
+            rgb_point.g = color[1] * 255;
+            rgb_point.b = color[2] * 255;
+            point_cloud_ptr->points.push_back(rgb_point);
+        }
+
+        pointclouds.push_back(point_cloud_ptr);
+    }
+
+    return pointclouds;
 }

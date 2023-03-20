@@ -37,9 +37,19 @@ add_executable(mobile_stereo_vision src/main.cpp ${SOURCES})
 # find_package(libzip REQUIRED)
 # target_link_libraries(mobile_stereo_vision libzip::zip)
 
+# PCL
+find_package(PCL CONFIG REQUIRED COMPONENTS common io visualization)
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+target_link_libraries(mobile_stereo_vision ${PCL_LIBRARIES})
+
+# find_package(Eigen3 CONFIG REQUIRED)
+# target_link_libraries(mobile_stereo_vision Eigen3::Eigen)
+
 # OpenCV
 find_package(OpenCV CONFIG REQUIRED)
-target_link_libraries(mobile_stereo_vision opencv_core opencv_imgproc opencv_highgui opencv_imgcodecs opencv_videoio opencv_video)
+target_link_libraries(mobile_stereo_vision opencv_core opencv_imgproc opencv_highgui opencv_imgcodecs opencv_calib3d)
 
 
 add_definitions("-DCMAKE_TOOLCHAIN_FILE=D:/ws/vcpkg/scripts/buildsystems/vcpkg.cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=D:/dev/open3d-devel -DCMAKE_GENERATOR_PLATFORM=x64")
@@ -58,6 +68,7 @@ add_custom_command(TARGET mobile_stereo_vision POST_BUILD
 
 # # Open3D
 # set(Open3D_DIR "D:/dev/open3d-devel/CMake")
+# set(CMAKE_INSTALL_PREFIX "D:/dev/open3d-devel")
 
 
 # # The options need to be the same as Open3D's default

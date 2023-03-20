@@ -34,7 +34,7 @@ vector<tuple<Mat, Mat>> run_stereo_correspondance(vector<StereoData> dataset, st
         results = get_disparity_wrapper(dataset);
     }
 
-    plot_imgs({get<0>(results[0]), get<0>(results[1]), get<0>(results[2])}, name + "_disparity");
+    visualize_imgs({get<0>(results[0]), get<0>(results[1]), get<0>(results[2])}, name + "_disparity");
 
     return results;
 }
@@ -61,13 +61,20 @@ int main()
         dataset = load_dataset(select_dataset);
     }
 
-    plot_imgs({dataset["chess"][0].img_0, dataset["chess"][0].img_1}, "chess");
+    visualize_imgs({dataset["chess"][0].img_0, dataset["chess"][0].img_1}, "chess");
 
-    vector<tuple<Mat, Mat>> chess_results = run_stereo_correspondance(dataset["chess"], "chess");
-    // vector<tuple<Mat, Mat>> curule_results = run_stereo_correspondance(dataset["curule"], "curule");
-    // vector<tuple<Mat, Mat>> skiboots_results = run_stereo_correspondance(dataset["skiboots"], "skiboots");
+    vector<tuple<Mat, Mat>> chess_disparities = run_stereo_correspondance(dataset["chess"], "chess");
+    // vector<tuple<Mat, Mat>> curule_disparities = run_stereo_correspondance(dataset["curule"], "curule");
+    // vector<tuple<Mat, Mat>> skiboots_disparities = run_stereo_correspondance(dataset["skiboots"], "skiboots");
+    
 
-    get_pointcloud(dataset["chess"][0].img_0, get<0>(chess_results[0]), get<1>(chess_results[0]), dataset["chess"][0].f, dataset["chess"][0].vmin, dataset["chess"][0].vmax);
+    vector<PointCloud<PointXYZRGB>::Ptr> chess_pointclouds;
+    {
+        Timer timer;
+        chess_pointclouds = get_pointcloud(dataset["chess"], chess_disparities);
+    }
+
+    visualize_pcds(chess_pointclouds, "chess");
 
     return 0;
 }
